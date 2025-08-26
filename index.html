@@ -18,6 +18,16 @@
         .transition-all {
             transition: all 0.3s ease-in-out;
         }
+        /* Анимация "тряски" для неверного кода */
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        .shake-error {
+            animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both;
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
@@ -39,7 +49,7 @@
 
         <!-- Поле для ввода кода -->
         <div class="mb-4">
-            <label for="iframeInput" class="block text-sm font-medium text-gray-700 mb-2">1. Вставьте код плейлиста (iframe):</label>
+            <label for="iframeInput" class="block text-sm font-medium text-gray-700 mb-2">1. Вставте html-код плейлиста (iframe):</label>
             <textarea 
                 id="iframeInput" 
                 rows="6"
@@ -88,8 +98,72 @@
         const copyBtn = document.getElementById('copyBtn');
         const statusMessage = document.getElementById('statusMessage');
 
-        // Функция для преобразования ссылки с анимацией
-        function animateAndConvert() {
+        // --- Анимация ошибки ---
+        function animateError() {
+            const inputRect = iframeInput.getBoundingClientRect();
+            const clone = document.createElement('div');
+            clone.textContent = iframeInput.value;
+            const computedStyle = window.getComputedStyle(iframeInput);
+            Object.assign(clone.style, {
+                position: 'absolute', top: `${inputRect.top}px`, left: `${inputRect.left}px`,
+                width: `${inputRect.width}px`, height: `${inputRect.height}px`, font: computedStyle.font,
+                padding: computedStyle.padding, margin: computedStyle.margin, border: '1px solid #ef4444', // Red border
+                borderRadius: computedStyle.borderRadius, backgroundColor: '#fee2e2', color: computedStyle.color,
+                lineHeight: computedStyle.lineHeight, zIndex: '1000', overflow: 'hidden',
+                whiteSpace: 'pre-wrap', wordBreak: 'break-all', boxSizing: 'border-box'
+            });
+            document.body.appendChild(clone);
+            iframeInput.style.color = 'transparent';
+            
+            clone.classList.add('shake-error');
+
+            setTimeout(() => {
+                clone.style.opacity = '0';
+                clone.style.transform = 'scale(0.8)';
+            }, 600);
+            
+            setTimeout(() => {
+                document.body.removeChild(clone);
+                iframeInput.value = '';
+                iframeInput.style.color = '';
+            }, 900);
+        }
+
+        // --- Анимация успеха ---
+        function animateSuccess() {
+            const inputRect = iframeInput.getBoundingClientRect();
+            const outputRect = outputUrl.getBoundingClientRect();
+            const clone = document.createElement('div');
+            clone.textContent = iframeInput.value;
+            const computedStyle = window.getComputedStyle(iframeInput);
+            Object.assign(clone.style, {
+                position: 'absolute', top: `${inputRect.top}px`, left: `${inputRect.left}px`,
+                width: `${inputRect.width}px`, height: `${inputRect.height}px`, font: computedStyle.font,
+                padding: computedStyle.padding, margin: computedStyle.margin, border: computedStyle.border,
+                borderRadius: computedStyle.borderRadius, backgroundColor: 'white', color: computedStyle.color,
+                lineHeight: computedStyle.lineHeight, zIndex: '1000', overflow: 'hidden',
+                whiteSpace: 'pre-wrap', wordBreak: 'break-all', boxSizing: 'border-box',
+                transition: 'all 0.7s cubic-bezier(0.4, 0, 0.2, 1)'
+            });
+            document.body.appendChild(clone);
+            iframeInput.style.color = 'transparent';
+
+            requestAnimationFrame(() => {
+                clone.style.top = `${outputRect.top + (outputRect.height / 2)}px`;
+                clone.style.left = `${outputRect.left + (outputRect.width / 2)}px`;
+                clone.style.transform = 'scale(0)';
+                clone.style.opacity = '0';
+            });
+
+            setTimeout(() => {
+                document.body.removeChild(clone);
+                iframeInput.value = '';
+                iframeInput.style.color = '';
+            }, 700);
+        }
+
+        // --- Основная логика ---
+        function handleConvert() {
             const iframeCode = iframeInput.value.trim();
             statusMessage.textContent = '';
             outputUrl.value = '';
@@ -101,94 +175,46 @@
 
             const srcMatch = iframeCode.match(/src="([^"]+)"/);
             if (!srcMatch || !srcMatch[1]) {
-                showError('Не удалось найти ссылку (атрибут src) в коде.');
+                showError('Ошибка: Не удалось найти ссылку (атрибут src) в коде.');
+                animateError();
                 return;
             }
 
             const originalUrl = srcMatch[1];
-            const regex = /iframe\/playlist\/([^/]+)\/([^/]+)/;
-            const partsMatch = originalUrl.match(regex);
-
-            if (!partsMatch || partsMatch.length !== 3) {
-                showError('Код не содержит ссылку нужного формата на плейлист Яндекс.Музыки.');
+            if (originalUrl.includes('/iframe/album/')) {
+                showError('Ошибка: Это ссылка на альбом, а не на плейлист.');
+                animateError();
                 return;
             }
 
-            // --- Логика анимации ---
+            const regex = /iframe\/playlist\/([^/]+)\/([^/]+)/;
+            const partsMatch = originalUrl.match(regex);
 
-            // 1. Получаем координаты элементов
-            const inputRect = iframeInput.getBoundingClientRect();
-            const outputRect = outputUrl.getBoundingClientRect();
-
-            // 2. Создаем клон элемента для анимации
-            const clone = document.createElement('div');
-            clone.textContent = iframeInput.value;
-
-            // 3. Стилизуем клон, чтобы он выглядел как текст в поле ввода
-            const computedStyle = window.getComputedStyle(iframeInput);
-            Object.assign(clone.style, {
-                position: 'absolute',
-                top: `${inputRect.top}px`,
-                left: `${inputRect.left}px`,
-                width: `${inputRect.width}px`,
-                height: `${inputRect.height}px`,
-                font: computedStyle.font,
-                padding: computedStyle.padding,
-                margin: computedStyle.margin,
-                border: computedStyle.border,
-                borderRadius: computedStyle.borderRadius,
-                backgroundColor: 'white',
-                color: computedStyle.color,
-                lineHeight: computedStyle.lineHeight,
-                zIndex: '1000',
-                overflow: 'hidden',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-                boxSizing: 'border-box',
-                transition: 'all 0.7s cubic-bezier(0.4, 0, 0.2, 1)' // Плавный переход
-            });
-
-            document.body.appendChild(clone);
-
-            // Скрываем текст в оригинальном поле ввода
-            iframeInput.style.color = 'transparent';
-
-            // Выполняем конвертацию и заполняем нижнее поле
-            const username = partsMatch[1];
-            const playlistId = partsMatch[2];
-            const newUrl = `https://music.yandex.ru/users/${username}/playlists/${playlistId}`;
-            outputUrl.value = newUrl;
-            showSuccess('Ссылка успешно преобразована!');
-
-            // 4. Запускаем анимацию "перемещения"
-            requestAnimationFrame(() => {
-                clone.style.top = `${outputRect.top + (outputRect.height / 2)}px`;
-                clone.style.left = `${outputRect.left + (outputRect.width / 2)}px`;
-                clone.style.transform = 'scale(0)';
-                clone.style.opacity = '0';
-            });
-
-            // 5. Удаляем клон и очищаем поле ввода после завершения анимации
-            setTimeout(() => {
-                document.body.removeChild(clone);
-                iframeInput.value = ''; // Очищаем поле
-                iframeInput.style.color = ''; // Возвращаем видимость текста для следующего ввода
-            }, 700); // Длительность должна совпадать с transition
+            if (partsMatch && partsMatch.length === 3) {
+                const username = partsMatch[1];
+                const playlistId = partsMatch[2];
+                const newUrl = `https://music.yandex.ru/users/${username}/playlists/${playlistId}`;
+                
+                outputUrl.value = newUrl;
+                showSuccess('Ссылка успешно преобразована!');
+                animateSuccess();
+            } else {
+                showError('Ошибка: Неверный формат кода или это не плейлист.');
+                animateError();
+            }
         }
 
-        // Функция для копирования в буфер обмена
+        // --- Вспомогательные функции ---
         function copyToClipboard() {
             if (!outputUrl.value) {
                 showError('Сначала преобразуйте ссылку.');
                 return;
             }
             outputUrl.select();
-            // document.execCommand('copy') используется для совместимости
             document.execCommand('copy');
             showSuccess('Скопировано в буфер обмена!');
         }
 
-        // Функции для отображения сообщений
         function showError(message) {
             statusMessage.textContent = message;
             statusMessage.classList.remove('text-green-600');
@@ -201,12 +227,10 @@
             statusMessage.classList.add('text-green-600');
         }
         
-        // Назначаем обработчики событий
-        convertBtn.addEventListener('click', animateAndConvert);
+        convertBtn.addEventListener('click', handleConvert);
         copyBtn.addEventListener('click', copyToClipboard);
 
     </script>
 
 </body>
 </html>
-
