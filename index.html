@@ -49,12 +49,12 @@
 
         <!-- Поле для ввода кода -->
         <div class="mb-4">
-            <label for="iframeInput" class="block text-sm font-medium text-gray-700 mb-2">1. Вставте html-код плейлиста (iframe):</label>
+            <label for="userInput" class="block text-sm font-medium text-gray-700 mb-2">1. Вставьте HTML-код плейлиста:</label>
             <textarea 
-                id="iframeInput" 
+                id="userInput" 
                 rows="6"
                 class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all" 
-                placeholder='<iframe frameborder="0" ...></iframe>'
+                placeholder='<iframe ...></iframe>'
             ></textarea>
         </div>
 
@@ -92,7 +92,7 @@
     </div>
 
     <script>
-        const iframeInput = document.getElementById('iframeInput');
+        const userInput = document.getElementById('userInput');
         const convertBtn = document.getElementById('convertBtn');
         const outputUrl = document.getElementById('outputUrl');
         const copyBtn = document.getElementById('copyBtn');
@@ -100,10 +100,10 @@
 
         // --- Анимация ошибки ---
         function animateError() {
-            const inputRect = iframeInput.getBoundingClientRect();
+            const inputRect = userInput.getBoundingClientRect();
             const clone = document.createElement('div');
-            clone.textContent = iframeInput.value;
-            const computedStyle = window.getComputedStyle(iframeInput);
+            clone.textContent = userInput.value;
+            const computedStyle = window.getComputedStyle(userInput);
             Object.assign(clone.style, {
                 position: 'absolute', top: `${inputRect.top}px`, left: `${inputRect.left}px`,
                 width: `${inputRect.width}px`, height: `${inputRect.height}px`, font: computedStyle.font,
@@ -113,7 +113,7 @@
                 whiteSpace: 'pre-wrap', wordBreak: 'break-all', boxSizing: 'border-box'
             });
             document.body.appendChild(clone);
-            iframeInput.style.color = 'transparent';
+            userInput.style.color = 'transparent';
             
             clone.classList.add('shake-error');
 
@@ -124,18 +124,18 @@
             
             setTimeout(() => {
                 document.body.removeChild(clone);
-                iframeInput.value = '';
-                iframeInput.style.color = '';
+                userInput.value = '';
+                userInput.style.color = '';
             }, 900);
         }
 
         // --- Анимация успеха ---
         function animateSuccess() {
-            const inputRect = iframeInput.getBoundingClientRect();
+            const inputRect = userInput.getBoundingClientRect();
             const outputRect = outputUrl.getBoundingClientRect();
             const clone = document.createElement('div');
-            clone.textContent = iframeInput.value;
-            const computedStyle = window.getComputedStyle(iframeInput);
+            clone.textContent = userInput.value;
+            const computedStyle = window.getComputedStyle(userInput);
             Object.assign(clone.style, {
                 position: 'absolute', top: `${inputRect.top}px`, left: `${inputRect.left}px`,
                 width: `${inputRect.width}px`, height: `${inputRect.height}px`, font: computedStyle.font,
@@ -146,7 +146,7 @@
                 transition: 'all 0.7s cubic-bezier(0.4, 0, 0.2, 1)'
             });
             document.body.appendChild(clone);
-            iframeInput.style.color = 'transparent';
+            userInput.style.color = 'transparent';
 
             requestAnimationFrame(() => {
                 clone.style.top = `${outputRect.top + (outputRect.height / 2)}px`;
@@ -157,51 +157,78 @@
 
             setTimeout(() => {
                 document.body.removeChild(clone);
-                iframeInput.value = '';
-                iframeInput.style.color = '';
+                userInput.value = '';
+                userInput.style.color = '';
             }, 700);
         }
 
         // --- Основная логика ---
         function handleConvert() {
-            const iframeCode = iframeInput.value.trim();
+            const inputText = userInput.value.trim();
             statusMessage.textContent = '';
             outputUrl.value = '';
 
-            if (!iframeCode) {
+            if (!inputText) {
                 showError('Поле ввода пустое.');
                 return;
             }
 
-            const srcMatch = iframeCode.match(/src="([^"]+)"/);
-            if (!srcMatch || !srcMatch[1]) {
-                showError('Ошибка: Не удалось найти ссылку (атрибут src) в коде.');
-                animateError();
-                return;
+            let urlToProcess = inputText;
+
+            // Если это iframe, извлекаем из него ссылку
+            if (inputText.startsWith('<iframe')) {
+                const srcMatch = inputText.match(/src="([^"]+)"/);
+                if (!srcMatch || !srcMatch[1]) {
+                    showError('Ошибка: Не удалось найти ссылку (атрибут src) в коде.');
+                    animateError();
+                    return;
+                }
+                urlToProcess = srcMatch[1];
+            }
+            
+            let username, playlistId;
+
+            // Regex для прямых ссылок: .../users/USERNAME/playlists/PLAYLIST_ID
+            const directLinkRegex = /users\/([^/]+)\/playlists\/([^/?]+)/;
+            let match = urlToProcess.match(directLinkRegex);
+
+            if (match && match.length === 3) {
+                username = match[1];
+                playlistId = match[2];
+            } else {
+                // Regex для iframe-ссылок: .../iframe/playlist/USERNAME/PLAYLIST_ID
+                const iframeLinkRegex = /iframe\/playlist\/([^/]+)\/([^/?]+)/;
+                match = urlToProcess.match(iframeLinkRegex);
+                if (match && match.length === 3) {
+                    username = match[1];
+                    playlistId = match[2];
+                }
             }
 
-            const originalUrl = srcMatch[1];
-            if (originalUrl.includes('/iframe/album/')) {
-                showError('Ошибка: Это ссылка на альбом, а не на плейлист.');
-                animateError();
-                return;
-            }
-
-            const regex = /iframe\/playlist\/([^/]+)\/([^/]+)/;
-            const partsMatch = originalUrl.match(regex);
-
-            if (partsMatch && partsMatch.length === 3) {
-                const username = partsMatch[1];
-                const playlistId = partsMatch[2];
+            if (username && playlistId) {
                 const newUrl = `https://music.yandex.ru/users/${username}/playlists/${playlistId}`;
-                
                 outputUrl.value = newUrl;
                 showSuccess('Ссылка успешно преобразована!');
                 animateSuccess();
-            } else {
-                showError('Ошибка: Неверный формат кода или это не плейлист.');
-                animateError();
+                return;
             }
+
+            // Если правильный формат не найден, ищем причину ошибки
+            if (urlToProcess.includes('/album/')) {
+                showError('Эта ссылка не подходит. Нужен HTML-код от плейлиста.');
+                animateError();
+                return;
+            }
+            
+            if (/\/playlists\/[a-f0-9-]+/.test(urlToProcess)) {
+                showError('Эта ссылка не подходит. Нужен HTML-код от плейлиста.');
+                animateError();
+                return;
+            }
+
+            // Общая ошибка, если ничего не подошло
+            showError('Ошибка: Неверный формат. Убедитесь, что это HTML-код или ссылка на плейлист, созданный пользователем.');
+            animateError();
         }
 
         // --- Вспомогательные функции ---
